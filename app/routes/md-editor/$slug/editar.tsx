@@ -1,5 +1,9 @@
 import { Button, OutlineButton } from '@lemonenergy/lemonpie'
-import type { ActionFunction, LoaderFunction } from '@remix-run/node'
+import type {
+  ActionFunction,
+  LoaderFunction,
+  MetaFunction,
+} from '@remix-run/node'
 import { redirect, json } from '@remix-run/node'
 import { Form, useLoaderData, useSubmit } from '@remix-run/react'
 import type { FormEventHandler } from 'react'
@@ -9,29 +13,36 @@ import {
   decodeMDFromBase64,
   encodeMDToBase64,
   getMDFile,
+  getTitleBySlug,
   parseMDCode,
   saveMDFile,
 } from '../../../services/markdown.server.service'
 import type { MarkdownFile } from '../../../types/Markdown'
+import { createMDErrorResponse } from '../../../utils/errors.server'
+
+import { MDSelectView } from './__components/View'
+
+export const meta: MetaFunction = ({ data }) => {
+  return { title: `Markdown Editor${data ? ` - ${data?.file?.title}` : ''}` }
+}
 
 export const loader: LoaderFunction = async ({ request, params }) => {
   const url = new URL(request.url)
-  const { slug } = params
+  const { slug = '' } = params
 
-  let file: MarkdownFile | undefined = undefined
+  try {
+    const encoded = url.searchParams.get('c') || undefined
+    const decoded = encoded && decodeMDFromBase64(encoded)
+    let file = await getMDFile(slug ?? '')
+    const shouldSave = decoded && decoded.code !== file.code
 
-  if (url.searchParams.get('c') !== null) {
-    const encoded = url.searchParams.get('c') || ''
-    file = decodeMDFromBase64(encoded)
-    console.log({ encoded, file })
+    return json({
+      file: shouldSave ? decodeMDFromBase64(encoded) : file,
+      shouldSave,
+    })
+  } catch (e) {
+    throw createMDErrorResponse(e, slug, getTitleBySlug(slug))
   }
-
-  if (!file) file = await getMDFile(slug ?? '')
-
-  return json({
-    file,
-    shouldSave: Boolean(url.searchParams.get('c')),
-  })
 }
 
 export const action: ActionFunction = async ({ request, params }) => {
@@ -40,21 +51,15 @@ export const action: ActionFunction = async ({ request, params }) => {
   const url = new URL(request.url)
 
   const code = formData.get('code')?.toString() || ''
-  const currentCode =
-    url.searchParams.get('c') &&
-    decodeMDFromBase64(url.searchParams.get('c') || '')
+  const encoded = url.searchParams.get('c') || ''
+  const current = decodeMDFromBase64(encoded)
 
   const action = formData.get('action')
   switch (action) {
     case 'preview':
-      let parsed = parseMDCode(code)
-      if (parsed.errors && parsed.errors.length) {
-        parsed = {
-          ...decodeMDFromBase64(currentCode),
-          errors: parsed.errors,
-        }
-      }
-      url.searchParams.set('c', encodeMDToBase64(parsed))
+      const parsed = parseMDCode(code)
+      const next = parsed.errors && parsed.errors.length ? current : parsed
+      url.searchParams.set('c', encodeMDToBase64(next))
       return redirect(url.toString())
     case 'save':
       await saveMDFile(slug, code)
@@ -77,7 +82,7 @@ export default () => {
     formData.set('code', ev.currentTarget.value || '')
     formData.set('action', 'preview')
 
-    submit(formData, { method: 'post' })
+    submit(formData, { method: 'post', replace: true })
   }
 
   return (
@@ -109,7 +114,7 @@ export default () => {
           )}
         </Form>
       </div>
-      <div dangerouslySetInnerHTML={{ __html: data.file.html }}></div>
+      {data.file && <MDSelectView file={data.file} />}
     </Editor>
   )
 }

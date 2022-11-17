@@ -4,7 +4,6 @@ import {
   DialogBody,
   DialogFooter,
   DialogHeader,
-  Icon,
   OutlineButton,
   Text,
   TextInput,
@@ -15,13 +14,13 @@ import {
   Form,
   useActionData,
   useLoaderData,
-  useLocation,
+  useSearchParams,
   useSubmit,
 } from '@remix-run/react'
 import type { FormEventHandler } from 'react'
+import { useRef } from 'react'
 
 import { Editor } from '../../components/Editor'
-import { Link } from '../../components/Link'
 import {
   decodeMDFromBase64,
   encodeMDToBase64,
@@ -31,15 +30,20 @@ import {
 } from '../../services/markdown.server.service'
 import type { MarkdownFile } from '../../types/Markdown'
 
+import { MDSelectView } from './$slug/__components/View'
+
 export const loader: LoaderFunction = async ({ request }) => {
   const url = new URL(request.url)
 
   const encoded = url.searchParams.get('c') || ''
   const file = encoded && decodeMDFromBase64(encoded)
   const title = url.searchParams.get('title')
+
+  const shouldEnableCreateButton = Boolean(file && title)
+
   return json({
     file: { ...file, title },
-    shouldEnableCreateButton: Boolean(file && title),
+    shouldEnableCreateButton,
   })
 }
 
@@ -48,24 +52,17 @@ export const action: ActionFunction = async ({ request, params }) => {
   const url = new URL(request.url)
 
   const code = formData.get('code')?.toString() || ''
+  const encoded = url.searchParams.get('c') || ''
+  const current = decodeMDFromBase64(encoded)
   const title = url.searchParams.get('title')
   const slug = title ? getSlugByTitle(title) : ''
-
-  const currentCode =
-    url.searchParams.get('c') &&
-    decodeMDFromBase64(url.searchParams.get('c') || '')
 
   const action = formData.get('action')
   switch (action) {
     case 'preview':
-      let parsed = parseMDCode(code)
-      if (parsed.errors && parsed.errors.length) {
-        parsed = {
-          ...decodeMDFromBase64(currentCode),
-          errors: parsed.errors,
-        }
-      }
-      url.searchParams.set('c', encodeMDToBase64(parsed))
+      const parsed = parseMDCode(code)
+      const next = parsed.errors && parsed.errors.length ? current : parsed
+      url.searchParams.set('c', encodeMDToBase64(next))
       return redirect(url.toString())
     case 'create':
       if (!title)
@@ -80,13 +77,14 @@ export const action: ActionFunction = async ({ request, params }) => {
 }
 
 export default () => {
-  const location = useLocation()
+  const [searchParams] = useSearchParams()
   const loaderData = useLoaderData<{
     file?: Partial<MarkdownFile>
     shouldEnableCreateButton: boolean
   }>()
   const actionData = useActionData()
   const submit = useSubmit()
+  const titleRef = useRef<HTMLFormElement>(null)
 
   const handleTextAreaChange: FormEventHandler<HTMLTextAreaElement> = (ev) => {
     const formData = new FormData()
@@ -96,41 +94,20 @@ export default () => {
     formData.set('code', ev.currentTarget.value || '')
     formData.set('action', 'preview')
 
-    submit(formData, { method: 'post' })
+    submit(formData, { method: 'post', replace: true })
   }
 
-  const handleTitleInputChange: FormEventHandler<HTMLInputElement> = (ev) => {
-    const formData = new FormData()
-
-    if (ev.target !== ev.currentTarget) return
-
-    formData.set('title', ev.currentTarget.value || '')
-    formData.set('code', loaderData.file?.code || '')
-
-    submit(formData, { method: 'get' })
+  const handleTitleInputChange = () => {
+    submit(titleRef.current)
   }
 
   return (
     <Editor>
-      {/* {actionData?.error && (
-        <noscript>
-          <div>
-            <Link to="#">
-              <Icon name="cross" />
-            </Link>
-            <Text>
-              <Text as="span" bold>
-                ERRO:
-              </Text>{' '}
-              {actionData?.error}
-            </Text>
-          </div>
-        </noscript>
-      )} */}
       <Dialog
         isOpen={Boolean(actionData?.error)}
-        onClose={() => submit(new FormData())}
+        onClose={handleTitleInputChange}
       >
+        {/* @ts-ignore */}
         <DialogHeader>Erro!</DialogHeader>
         <DialogBody>
           <Text>
@@ -141,13 +118,15 @@ export default () => {
           </Text>
         </DialogBody>
         <DialogFooter>
-          <OutlineButton to={location.pathname} inline>
+          {/* @ts-ignore */}
+          <OutlineButton onClick={handleTitleInputChange} inline>
             Voltar
           </OutlineButton>
         </DialogFooter>
       </Dialog>
       <div id="editor">
-        <Form method="get">
+        <Form method="get" ref={titleRef}>
+          <input name="c" type="hidden" value={searchParams.get('c') || ''} />
           <TextInput
             onChange={handleTitleInputChange}
             label="Título"
@@ -173,23 +152,21 @@ export default () => {
           </noscript>
         </Form>
 
-        <Form method="post">
-          <input type="hidden" name="title" value={loaderData.file?.title} />
-          <input type="hidden" name="code" value={loaderData.file?.code} />
-          {/* @ts-expect-error */}
-          <OutlineButton
-            disabled={!loaderData.shouldEnableCreateButton}
-            name="action"
-            value="create"
-            inline
-          >
-            Criar
-          </OutlineButton>
-        </Form>
+        {loaderData.shouldEnableCreateButton && (
+          <Form method="post">
+            <input type="hidden" name="title" value={loaderData.file?.title} />
+            <input type="hidden" name="code" value={loaderData.file?.code} />
+            {/* @ts-expect-error */}
+            <OutlineButton name="action" value="create" inline>
+              Criar
+            </OutlineButton>
+          </Form>
+        )}
       </div>
-      <div
-        dangerouslySetInnerHTML={{ __html: loaderData.file?.html || '' }}
-      ></div>
+      <div>
+        <Text variant="title300">{loaderData?.file?.title}</Text>
+        {loaderData.file && <MDSelectView file={loaderData.file} />}
+      </div>
     </Editor>
   )
 }

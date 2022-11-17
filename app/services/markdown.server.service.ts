@@ -58,7 +58,7 @@ export const encodeMDToBase64 = (attrs: Markdown) => {
   return base64.encode(JSON.stringify(attrs))
 }
 
-export const decodeMDFromBase64 = (str: string) => {
+export const decodeMDFromBase64 = (str?: string): MarkdownFile => {
   return str ? JSON.parse(base64.decode(str)) : undefined
 }
 
@@ -74,7 +74,7 @@ const getSlugByFilename = (file: string) => {
 }
 
 export const getSlugByTitle = (title: string) => {
-  return title.trim().replace(/\s/g, '-')
+  return title.toLowerCase().trim().replace(/\s/g, '-')
 }
 export const getTitleByFilename = (filename: string) => {
   return getTitleBySlug(getSlugByFilename(filename))
