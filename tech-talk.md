@@ -1,0 +1,22 @@
+- Contexto frontend (SPA x SSR)
+  - SPAs
+  - SSR
+    - Rehidratação
+    - SSG
+    - SSR
+      - Server-rendering
+      - Routing
+      - Requisições pós rehidratação
+
+- Remix
+  - Características
+    - React
+    - Absratação de todas as requisições para o seu app
+    - Infrastructure agnostic
+    - DX, web standards e progressive enhancement
+  - Features
+    - Root
+    - Nested routes (routes/my-routes)
+    - Metas, Headers, Links
+    - Loaders (/md, $slug)
+    - Actions ($slug/editar, $slug/criar)
